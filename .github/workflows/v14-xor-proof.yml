@@ -1,0 +1,74 @@
+name: V14 XOR-aware proof verification
+on:
+  push:
+    paths:
+      - .github/workflows/v14-xor-proof.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch CryptoMiniSat and proof tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://github.com/msoos/cryptominisat/releases/download/release/v5.14.7/cryptominisat5-v5.14.7-linux-amd64.tar.gz -o cms.tar.gz
+          echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
+          mkdir cms && tar xzf cms.tar.gz -C cms
+          CMS=$(find cms -type f -name cryptominisat5 | head -1)
+          chmod +x "$CMS"
+          echo "CMS=$CMS" >> "$GITHUB_ENV"
+          git clone --depth 1 https://github.com/meelgroup/frat-xor.git
+          (cd frat-xor && cargo build --release)
+          (cd frat-xor/cake_xlrup && make)
+          git -C frat-xor rev-parse HEAD > frat-xor-commit.txt
+      - name: Download selected 2026 UNSAT Lights Out formulas
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir inputs proofs
+          for h in 32e344a5ab3af245f982678d2b751c6d 0efcbd10294eb001b16b4d126923372f 667341ee8c1dea3db613db317e2b2c33 80b163b706e0a16702173ec27f3d1331; do
+            curl -fsSL "https://benchmark-database.de/file/${h}?context=cnf" -o "inputs/${h}.xz"
+            xz -dc "inputs/${h}.xz" > "inputs/${h}.cnf"
+          done
+      - name: Generate and formally verify FRAT-XOR proofs
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > proof_results.csv
+          echo 'hash,cms_seconds,frat_bytes,xlrup_bytes,verified' > proof_results.csv
+          for f in inputs/*.cnf; do
+            h=$(basename "$f" .cnf)
+            proof="proofs/${h}.frat"
+            clean="proofs/${h}.clean.frat"
+            xlrup="proofs/${h}.xlrup"
+            start=$(date +%s.%N)
+            set +e
+            "$CMS" --verb=0 --threads=1 --presimp=1 --maxxormat=10000000 --maxmatrixrows=5000 --maxmatrixcols=5000 --xorfindtout=4000 --autodisablegauss=0 "$f" "$proof" > "proofs/${h}.cms.log" 2>&1
+            rc=$?
+            set -e
+            end=$(date +%s.%N)
+            [ "$rc" -eq 20 ] || { echo "CMS failed $h rc=$rc"; exit 1; }
+            grep -v '^c' "$proof" > "$clean"
+            frat-xor/target/release/frat-xor elab "$clean" "$f" "$xlrup" > "proofs/${h}.elab.log" 2>&1
+            frat-xor/cake_xlrup/cake_xlrup "$f" "$xlrup" | tee "proofs/${h}.check.log"
+            grep -q 's VERIFIED UNSAT' "proofs/${h}.check.log"
+            secs=$(python3 -c "print(float('$end')-float('$start'))")
+            echo "$h,$secs,$(stat -c%s "$proof"),$(stat -c%s "$xlrup"),yes" >> proof_results.csv
+          done
+          cat proof_results.csv
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v14-xor-proof-results
+          path: |
+            proof_results.csv
+            frat-xor-commit.txt
+            proofs/*.check.log
+            proofs/*.cms.log
+            proofs/*.elab.log
+          retention-days: 14
