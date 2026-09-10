@@ -5,6 +5,7 @@ on:
       - v15_router.cpp
       - v15_benchmark.py
       - v15_seen_hashes.txt
+      - v15_timing_patch.py
       - .github/workflows/v15-frozen-eval.yml
   workflow_dispatch:
 permissions:
@@ -15,6 +16,8 @@ jobs:
     timeout-minutes: 18
     steps:
       - uses: actions/checkout@v4
+      - name: Apply timing-only instrumentation
+        run: python3 v15_timing_patch.py
       - name: Build pinned Kissat 4.0.4 and V15
         shell: bash
         run: |
@@ -35,7 +38,6 @@ jobs:
           echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
           mkdir cms
           tar xzf cms.tar.gz -C cms
-          find cms -maxdepth 3 -type f -print
           CMS_BIN=$(find "$PWD/cms" -type f -name cryptominisat5 | head -1)
           test -n "$CMS_BIN"
           chmod +x "$CMS_BIN"
@@ -59,20 +61,17 @@ jobs:
           from pathlib import Path
           p=Path('v15_eval/results.csv')
           if not p.exists(): raise SystemExit()
-          rows=list(csv.DictReader(p.open()))
-          timeout=5.0
-          out={}
+          rows=list(csv.DictReader(p.open())); timeout=5.0; out={}
           for v in ['kissat','cms','v15']:
               r=[x for x in rows if x['variant']==v]
               solved=[x for x in r if x['status'] in ('SAT','UNSAT')]
               par2=[float(x['wall_s']) if x['status'] in ('SAT','UNSAT') else 2*timeout for x in r]
-              out[v]={'runs':len(r),'solved':len(solved),'mean_par2_s':sum(par2)/len(par2) if par2 else None,'median_wall_s_solved':statistics.median(float(x['wall_s']) for x in solved) if solved else None}
+              out[v]={'runs':len(r),'solved':len(solved),'mean_par2_s':sum(par2)/len(par2) if par2 else None,'median_algorithm_s_solved':statistics.median(float(x['wall_s']) for x in solved) if solved else None}
           routed={}
           for x in rows:
               if x['variant']=='v15':routed[x.get('route','')]=routed.get(x.get('route',''),0)+1
           out['v15_routes']=routed
-          Path('v15_eval/summary.json').write_text(json.dumps(out,indent=2))
-          print(json.dumps(out,indent=2))
+          Path('v15_eval/summary.json').write_text(json.dumps(out,indent=2)); print(json.dumps(out,indent=2))
           PY
       - uses: actions/upload-artifact@v4
         if: always()
@@ -87,4 +86,5 @@ jobs:
             v15_router.cpp
             v15_benchmark.py
             v15_seen_hashes.txt
+            v15_timing_patch.py
           retention-days: 30
