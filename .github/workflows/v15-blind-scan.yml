@@ -1,0 +1,44 @@
+name: V15 blind structural scan
+on:
+  push:
+    paths:
+      - v15_blind_scan.py
+      - v15_router.cpp
+      - v15_seen_hashes.txt
+      - .github/workflows/v15-blind-scan.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      SHARD: ${{ matrix.shard }}
+      NSHARDS: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build frozen V15 structural analyzer
+        shell: bash
+        run: |
+          set -euo pipefail
+          g++ -O3 -DNDEBUG -std=c++17 v15_router.cpp -o v15_router
+          sha256sum v15_router.cpp v15_blind_scan.py v15_seen_hashes.txt > inputs.sha256
+      - name: Scan prespecified unseen hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 v15_blind_scan.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v15-blind-scan-${{ matrix.shard }}
+          path: |
+            v15_scan/scan_${{ matrix.shard }}.csv
+            v15_scan/selected.csv
+            inputs.sha256
+          retention-days: 30
