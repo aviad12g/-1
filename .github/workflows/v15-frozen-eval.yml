@@ -1,0 +1,89 @@
+name: V15 frozen untouched 2026 evaluation
+on:
+  push:
+    paths:
+      - v15_router.cpp
+      - v15_benchmark.py
+      - v15_seen_hashes.txt
+      - .github/workflows/v15-frozen-eval.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Kissat 4.0.4 and V15
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://codeload.github.com/arminbiere/kissat/tar.gz/8af8e56f174b778aef3aa45af9f739b2a5f492c2 -o kissat.tar.gz
+          echo '8af8e56f174b778aef3aa45af9f739b2a5f492c2  pinned Kissat source commit' > KISSAT_COMMIT.txt
+          tar xzf kissat.tar.gz
+          mv kissat-8af8e56f174b778aef3aa45af9f739b2a5f492c2 kissat-src
+          (cd kissat-src && ./configure && make -j2)
+          g++ -O3 -DNDEBUG -std=c++17 v15_router.cpp -o v15_router
+          ./kissat-src/build/kissat --version | tee KISSAT_VERSION.txt
+          g++ --version | head -1 | tee COMPILER.txt
+      - name: Fetch pinned CryptoMiniSat 5.14.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://github.com/msoos/cryptominisat/releases/download/release/v5.14.7/cryptominisat5-v5.14.7-linux-amd64.tar.gz -o cms.tar.gz
+          echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
+          mkdir cms
+          tar xzf cms.tar.gz -C cms --strip-components=1
+          find cms -type f -name cryptominisat5 -print
+          CMS_BIN=$(find "$PWD/cms" -type f -name cryptominisat5 | head -1)
+          chmod +x "$CMS_BIN"
+          echo "$CMS_BIN" > CMS_PATH.txt
+          "$CMS_BIN" --version | head -8 | tee CMS_VERSION.txt
+      - name: Run frozen evaluation
+        shell: bash
+        run: |
+          set -euo pipefail
+          CMS_BIN=$(cat CMS_PATH.txt)
+          export KISSAT="$PWD/kissat-src/build/kissat"
+          export CMS="$CMS_BIN"
+          export V15="$PWD/v15_router"
+          python3 v15_benchmark.py
+      - name: Summarize raw results without tuning
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import csv,json,statistics
+          from pathlib import Path
+          p=Path('v15_eval/results.csv')
+          if not p.exists(): raise SystemExit()
+          rows=list(csv.DictReader(p.open()))
+          timeout=5.0
+          out={}
+          for v in ['kissat','cms','v15']:
+              r=[x for x in rows if x['variant']==v]
+              solved=[x for x in r if x['status'] in ('SAT','UNSAT')]
+              par2=[float(x['wall_s']) if x['status'] in ('SAT','UNSAT') else 2*timeout for x in r]
+              out[v]={'runs':len(r),'solved':len(solved),'mean_par2_s':sum(par2)/len(par2) if par2 else None,'median_wall_s_solved':statistics.median(float(x['wall_s']) for x in solved) if solved else None}
+          routed={}
+          for x in rows:
+              if x['variant']=='v15':routed[x.get('route','')]=routed.get(x.get('route',''),0)+1
+          out['v15_routes']=routed
+          Path('v15_eval/summary.json').write_text(json.dumps(out,indent=2))
+          print(json.dumps(out,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v15-frozen-eval
+          path: |
+            v15_eval
+            KISSAT_COMMIT.txt
+            KISSAT_VERSION.txt
+            CMS_VERSION.txt
+            COMPILER.txt
+            v15_router.cpp
+            v15_benchmark.py
+            v15_seen_hashes.txt
+          retention-days: 30
