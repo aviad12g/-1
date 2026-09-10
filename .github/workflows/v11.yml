@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - v11_bench.py
+      - v11b_bench.py
+      - v11b_patch.py
       - .github/workflows/v11.yml
 
 permissions:
@@ -13,15 +15,16 @@ permissions:
 jobs:
   benchmark:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Build pinned Kissat 4.0.4
+      - name: Build pinned Kissat 4.0.4 with inert V11b hook
         shell: bash
         run: |
           set -euxo pipefail
           curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz -o kissat.tgz
           tar xzf kissat.tgz
+          python3 v11b_patch.py
           cd kissat-rel-4.0.4
           ./configure --quiet
           make -j2
@@ -29,18 +32,18 @@ jobs:
           ./build/kissat --id
       - name: Install benchmark dependency
         run: python3 -m pip install --quiet numpy
-      - name: Run V11a SOTA-core benchmark
+      - name: Run V11b native confidence-gated benchmark
         shell: bash
         run: |
           set -o pipefail
-          python3 v11_bench.py ./kissat-rel-4.0.4/build/kissat --sizes 200,300,400 --seeds 4 --timeout 8 --out v11_results.csv | tee v11_run.log
+          python3 v11b_bench.py ./kissat-rel-4.0.4/build/kissat --sizes 200,300,400 --seeds 4 --timeout 8 --thresholds .80,.90,.95 --out v11b_results.csv | tee v11b_run.log
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sat-rag-v11-results
+          name: sat-rag-v11b-results
           path: |
-            v11_results.csv
-            v11_summary.json
-            v11_run.log
+            v11b_results.csv
+            v11b_summary.json
+            v11b_run.log
           if-no-files-found: warn
