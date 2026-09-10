@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import csv, hashlib, json, os, random, subprocess, sys, time, urllib.request
+import bz2, csv, gzip, hashlib, json, lzma, os, random, subprocess, sys, time, urllib.request
 from pathlib import Path
 
 N_SELECT=30
@@ -8,6 +8,8 @@ PRE_MS=250
 MIXED_MS=3000
 PREFIX='SAT-RAG-V15|'
 CMS_OPTS=['--verb=0','--threads=1','--presimp=1','--maxxormat=10000000','--maxmatrixrows=20000','--maxmatrixcols=20000','--xorfindtout=4000','--autodisablegauss=0']
+MAX_DOWNLOAD=25_000_000
+MAX_DECOMPRESSED=120_000_000
 
 def read_selected(path):
     with open(path,newline='') as f:return list(csv.DictReader(f))
@@ -17,14 +19,28 @@ def frozen_select(rows,seen):
     cand.sort(key=lambda r: hashlib.sha256((PREFIX+r['hash']).encode()).hexdigest())
     return cand[:N_SELECT]
 
+def normalize(data):
+    codec='plain'
+    if data.startswith(b'\xfd7zXZ\x00'):
+        codec='xz'; raw=lzma.decompress(data)
+    elif data.startswith(b'\x1f\x8b'):
+        codec='gzip'; raw=gzip.decompress(data)
+    elif data.startswith(b'BZh'):
+        codec='bzip2'; raw=bz2.decompress(data)
+    else: raw=data
+    if len(raw)>MAX_DECOMPRESSED:raise ValueError('decompressed_too_large')
+    # Require textual DIMACS after normalization. Leading comments are fine.
+    head=raw[:1_000_000].decode('ascii','ignore')
+    if not any(line.startswith('p cnf ') for line in head.splitlines()):raise ValueError('no_dimacs_header_after_normalization')
+    return raw,codec
+
 def download(row,out):
     url='https://benchmark-database.de/file/'+row['hash']
     try:
-        with urllib.request.urlopen(url,timeout=35) as f:
-            data=f.read(25_000_001)
-        if len(data)>25_000_000:return {'download':'too_large','bytes':len(data)}
-        out.write_bytes(data)
-        return {'download':'ok','bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()}
+        with urllib.request.urlopen(url,timeout=35) as f:data=f.read(MAX_DOWNLOAD+1)
+        if len(data)>MAX_DOWNLOAD:return {'download':'too_large','download_bytes':len(data)}
+        raw,codec=normalize(data);out.write_bytes(raw)
+        return {'download':'ok','download_bytes':len(data),'cnf_bytes':len(raw),'codec':codec,'sha256_download':hashlib.sha256(data).hexdigest(),'sha256_cnf':hashlib.sha256(raw).hexdigest()}
     except Exception as e:return {'download':'failed','error':str(e)}
 
 def parse_model(text):
@@ -55,7 +71,7 @@ def verify_model(path,m):
 
 def run(cmd,timeout,path=None):
     t=time.perf_counter()
-    try:p=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=timeout)
+    try:p=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors='replace',timeout=timeout)
     except subprocess.TimeoutExpired:return {'status':'TIMEOUT','wall_s':time.perf_counter()-t,'model_ok':''}
     wall=time.perf_counter()-t
     st='SAT' if p.returncode==10 else 'UNSAT' if p.returncode==20 else 'ERROR'
@@ -65,7 +81,7 @@ def run(cmd,timeout,path=None):
 
 def run_v15(binpath,path,kissat,cms):
     t=time.perf_counter()
-    try:p=subprocess.run([binpath,str(path),'--kissat',kissat,'--cms',cms,'--budget-ms',str(int(TIMEOUT*1000)),'--pre-ms',str(PRE_MS),'--mixed-ms',str(MIXED_MS)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=TIMEOUT+1)
+    try:p=subprocess.run([binpath,str(path),'--kissat',kissat,'--cms',cms,'--budget-ms',str(int(TIMEOUT*1000)),'--pre-ms',str(PRE_MS),'--mixed-ms',str(MIXED_MS)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors='replace',timeout=TIMEOUT+1)
     except subprocess.TimeoutExpired:return {'status':'TIMEOUT','wall_s':time.perf_counter()-t,'route':'outer-timeout','model_ok':''}
     wall=time.perf_counter()-t
     try:d=json.loads(p.stdout.strip().splitlines()[-1])
@@ -87,7 +103,6 @@ def main():
     for rank,r in enumerate(chosen):
         p=root/(r['hash']+'.cnf');rec={'rank':rank,**r,**download(r,p)};receipts.append(rec);print('DOWNLOAD',json.dumps(rec),flush=True)
         if rec['download']!='ok':continue
-        # deterministic per-instance order prevents systematic warmup bias
         variants=['kissat','cms','v15'];random.Random(int(r['hash'][:16],16)^0x515151).shuffle(variants)
         for v in variants:
             if v=='kissat':res=run([kissat,'--quiet','--seed=0',str(p)],TIMEOUT,p)
@@ -98,9 +113,7 @@ def main():
     fields=sorted({k for r in rows for k in r})
     with open(root/'results.csv','w',newline='') as f:
         w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
-    # validity checks independent of speed claims
-    bad=[]
-    byhash={}
+    bad=[];byhash={}
     for r in rows:
         if r.get('status')=='SAT' and r.get('model_ok') is False:bad.append({'type':'invalid_model',**r})
         if r['known'] in ('sat','unsat') and r.get('status') in ('SAT','UNSAT') and r.get('status').lower()!=r['known']:bad.append({'type':'known_mismatch',**r})
