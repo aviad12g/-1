@@ -1,0 +1,46 @@
+name: SAT RAG V11 Kissat benchmark
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - v11_bench.py
+      - .github/workflows/v11.yml
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Kissat 4.0.4
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz -o kissat.tgz
+          tar xzf kissat.tgz
+          cd kissat-rel-4.0.4
+          ./configure --quiet
+          make -j2
+          ./build/kissat --version
+          ./build/kissat --id
+      - name: Install benchmark dependency
+        run: python3 -m pip install --quiet numpy
+      - name: Run V11a SOTA-core benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 v11_bench.py ./kissat-rel-4.0.4/build/kissat --sizes 200,300,400 --seeds 4 --timeout 8 --out v11_results.csv | tee v11_run.log
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sat-rag-v11-results
+          path: |
+            v11_results.csv
+            v11_summary.json
+            v11_run.log
+          if-no-files-found: warn
