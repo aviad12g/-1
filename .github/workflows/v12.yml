@@ -1,0 +1,53 @@
+name: SAT RAG V12 dynamic conflict memory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - v12_patch.py
+      - v12_bench.py
+      - .github/workflows/v12.yml
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Kissat 4.0.4 with V12 conflict memory
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz -o kissat.tgz
+          tar xzf kissat.tgz
+          python3 v12_patch.py
+          cd kissat-rel-4.0.4
+          ./configure --statistics
+          make -j2
+          ./build/kissat --version
+      - name: Smoke test V12
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 v12_bench.py ./kissat-rel-4.0.4/build/kissat --sizes 50,80 --seeds 2 --timeout 2 --confs .65,.75 --out v12_smoke.csv | tee v12_smoke.log
+      - name: Run V12 development benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 v12_bench.py ./kissat-rel-4.0.4/build/kissat --sizes 200,300,400 --seeds 4 --timeout 8 --confs .65,.75 --out v12_dev.csv | tee v12_dev.log
+      - name: Upload V12 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sat-rag-v12-dev
+          path: |
+            v12_smoke.csv
+            v12_smoke.json
+            v12_smoke.log
+            v12_dev.csv
+            v12_dev.json
+            v12_dev.log
+          if-no-files-found: warn
