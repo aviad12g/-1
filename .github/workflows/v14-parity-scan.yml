@@ -1,0 +1,125 @@
+name: V14 selected parity-family affine scan
+on:
+  push:
+    paths:
+      - .github/workflows/v14-parity-scan.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and exact-scan selected parity-related families
+        shell: bash
+        run: |
+          cat > /tmp/scan.py <<'PY'
+          import urllib.request,lzma,time,csv,io
+          cases='''
+          7db30d12cb06f0dc2f30abff80d96d6a|binary-tree-parity|unknown
+          01d6fa8efd18ebfecd06af408958477b|lights-out|sat
+          0efcbd10294eb001b16b4d126923372f|lights-out|unsat
+          28dcc4119e1bbb5fbd3fdd8f4140f28d|lights-out|sat
+          32e344a5ab3af245f982678d2b751c6d|lights-out|unsat
+          65ee6b49612eccb7d213e4d950f23677|lights-out|sat
+          667341ee8c1dea3db613db317e2b2c33|lights-out|unsat
+          80b163b706e0a16702173ec27f3d1331|lights-out|unsat
+          247e42e46495f1c4b8707e497af8c93e|linear-equations|unknown
+          2d89fda1bd6a761ca5e2f4bb89202681|linear-equations|unknown
+          30c6fa5c4f5910029b782b712844c93a|linear-equations|unknown
+          4d84e818a5ab324dde37429dd2455551|linear-equations|unknown
+          511f1794698a8620c18a7cc32cfc7776|linear-equations|unknown
+          744238c5aadea40f8e05db49429da576|linear-equations|unknown
+          8e1cdc28bad48753110be5bd578cb934|linear-equations|unknown
+          9078ea73ff67edf2b6dcd007c9696ca0|linear-equations|unknown
+          ab2ab3a0651f0f35ba319ad976b1b6fd|linear-equations|unknown
+          aca9f4faabeb57a57c678d55f5bbd2f4|linear-equations|unknown
+          e3a132ecb8108f7d8a46b6686e686b60|linear-equations|unknown
+          fed3f8d39738c2e935e8ed13ddeb6967|linear-equations|unknown
+          1eea3d913d346b900252d77fc0cb25c8|minimal-disagreement-parity|sat
+          61fee64c8fc7f05b97a2bc14c0c2bf41|minimal-disagreement-parity|sat
+          16ca57f2cdffd5b0260fc771017e1f04|minimum-disagreement-parity|unknown
+          23daec2c71ce3c1e346e6042f3dc42eb|minimum-disagreement-parity|unsat
+          425c81fc3af7f5124b6282583d80df11|minimum-disagreement-parity|unsat
+          db15a85651e0d941a11bf8640625edd8|minimum-disagreement-parity|sat
+          22c8d6aa86d51e15ef5ab37479eda22b|ordering-principle-xor|unsat
+          75429ff7acb5acb597abe01aa745c2a6|tseitin-formulas|sat
+          7e21850936d6127540157afaaf912c02|tseitin-formulas|unknown
+          3a8409393cc1ebae1444a079d216f221|xor-chain|unknown
+          1707c4c24e66b2cfe6c03955b638bebf|xor-shifting|unknown
+          231f3a169120d3cda9f8feea88a20d85|xor-shifting|unknown
+          43c298c756cac6d547a0457c2da7e468|xor-shifting|unknown
+          8d2b018a5f8855b6ba1868a3ffff9d2f|xor-shifting|unknown
+          a08c17f9a3888841cf7bbc75a807ff7e|xor-shifting|unknown
+          a110c13186ef5785df8da4bfa2ce9a6d|xor-shifting|unknown
+          a60a138325ac9c88ab293ec0c801a95c|xor-shifting|unknown
+          ad5b80bb4d1b60bee12163df25846801|xor-shifting|unknown
+          ca7f7824a958b98512a0c96d73251f8b|xor-shifting|unknown
+          d10b8bcd1bb5977c5ffe2d1859e4335f|xor-shifting|unknown
+          d418605014fdeb1236bfa720ac460c62|xor-shifting|unknown
+          '''
+          cases=[tuple(x.strip().split('|')) for x in cases.splitlines() if x.strip()]
+          def pmask(k,p):
+            b=0
+            for q in range(1<<k):
+              if q.bit_count()%2==p:b|=1<<q
+            return b
+          def solve(data,maxk=6):
+            text=data.decode('ascii','ignore'); groups={};n=m=None;clauses=0;eligible=0
+            for line in text.splitlines():
+              line=line.strip()
+              if not line or line.startswith('c'):continue
+              if line.startswith('p cnf'):
+                z=line.split();n=int(z[2]);m=int(z[3]);continue
+              if line.startswith('%'):break
+              lits=[int(x) for x in line.split() if x!='0']
+              clauses+=1
+              if 1<=len(lits)<=maxk and len({abs(x) for x in lits})==len(lits):
+                eligible+=1;key=tuple(sorted(abs(x) for x in lits)); neg={abs(x) for x in lits if x<0};pat=0
+                for j,v in enumerate(key):
+                  if v in neg:pat|=1<<j
+                groups[key]=groups.get(key,0)|(1<<pat)
+            eq=[];recognized=0
+            for key,bits in groups.items():
+              k=len(key);em=pmask(k,0);om=pmask(k,1);he=(bits&em)==em;ho=(bits&om)==om
+              if he and ho:return n,m,recognized,'UNSAT_LOCAL',len(eq)
+              if he: eq.append((set(key),1));recognized+=1<<(k-1)
+              elif ho: eq.append((set(key),0));recognized+=1<<(k-1)
+            if not m:m=clauses
+            pure=(recognized==m==clauses)
+            if not pure:return n,m,recognized,'PARTIAL',len(eq)
+            piv={}
+            for row,rhs in eq:
+              row=set(row)
+              while row:
+                p=max(row)
+                if p not in piv:piv[p]=(row,rhs);break
+                a,b=piv[p];row.symmetric_difference_update(a);rhs^=b
+              if not row and rhs:return n,m,recognized,'UNSAT',len(eq)
+            # Pure affine, consistency established. This is SAT regardless of rank.
+            return n,m,recognized,'SAT',len(eq)
+          rows=[]
+          for h,fam,known in cases:
+            t=time.perf_counter();row={'hash':h,'family':fam,'known':known}
+            try:
+              with urllib.request.urlopen('https://benchmark-database.de/file/'+h+'?context=cnf',timeout=45) as q:
+                comp=q.read(20_000_001)
+              if len(comp)>20_000_000:
+                row.update(status='SKIP_SIZE',compressed_bytes=len(comp))
+              else:
+                raw=lzma.decompress(comp);n,m,rec,st,neq=solve(raw)
+                row.update(status=st,n=n,m=m,equations=neq,recognized=rec,recognized_frac=rec/max(m,1),compressed_bytes=len(comp),raw_bytes=len(raw))
+            except Exception as e:row.update(status='ERROR',error=repr(e))
+            row['wall_s']=time.perf_counter()-t;rows.append(row);print(row,flush=True)
+          keys=sorted({k for r in rows for k in r})
+          with open('v14_parity_scan.csv','w',newline='') as f:
+            w=csv.DictWriter(f,fieldnames=keys);w.writeheader();w.writerows(rows)
+          PY
+          python3 /tmp/scan.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v14-parity-family-scan
+          path: v14_parity_scan.csv
+          retention-days: 14
