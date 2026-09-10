@@ -34,9 +34,10 @@ jobs:
           curl -fL https://github.com/msoos/cryptominisat/releases/download/release/v5.14.7/cryptominisat5-v5.14.7-linux-amd64.tar.gz -o cms.tar.gz
           echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
           mkdir cms
-          tar xzf cms.tar.gz -C cms --strip-components=1
-          find cms -type f -name cryptominisat5 -print
+          tar xzf cms.tar.gz -C cms
+          find cms -maxdepth 3 -type f -print
           CMS_BIN=$(find "$PWD/cms" -type f -name cryptominisat5 | head -1)
+          test -n "$CMS_BIN"
           chmod +x "$CMS_BIN"
           echo "$CMS_BIN" > CMS_PATH.txt
           "$CMS_BIN" --version | head -8 | tee CMS_VERSION.txt
