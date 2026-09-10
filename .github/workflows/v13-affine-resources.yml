@@ -1,0 +1,43 @@
+name: V13 affine validation resources
+on:
+  push:
+    paths: [.github/workflows/v13-affine-resources.yml]
+permissions:
+  contents: read
+jobs:
+  resources:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect fixed inputs without inspecting solve outcomes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir affine-resources
+          cd affine-resources
+          curl -fL https://github.com/msoos/cryptominisat/releases/download/release/v5.14.7/cryptominisat5-v5.14.7-linux-amd64.tar.gz -o cms.tar.gz
+          echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
+          python3 - <<'PY'
+          import urllib.request,json,hashlib
+          from pathlib import Path
+          pairs=[('lights-out','01d6fa8efd18ebfecd06af408958477b'),('linear-equations','247e42e46495f1c4b8707e497af8c93e'),('minimal-disagreement-parity','1eea3d913d346b900252d77fc0cb25c8'),('minimum-disagreement-parity','16ca57f2cdffd5b0260fc771017e1f04'),('tseitin-formulas','75429ff7acb5acb597abe01aa745c2a6'),('xor-chain','3a8409393cc1ebae1444a079d216f221'),('xor-shifting','1707c4c24e66b2cfe6c03955b638bebf'),('ordering-principle-xor','22c8d6aa86d51e15ef5ab37479eda22b'),('bitvector','04d0ae28e10d4a35ebab62f42f0200e8'),('coloring','1a3bef9e03bab1ed4e9e34506d72a451'),('hardware-verification','12cd0c3196589ac8105653cbfe613fc6'),('circuit-equivalence-checking','fbf3b9f8a03a1efedae3da04622fe96e')]
+          receipt=[]
+          for family,h in pairs:
+              row={'family':family,'hash':h,'url':'https://benchmark-database.de/file/'+h}
+              try:
+                  with urllib.request.urlopen(row['url'],timeout=35) as f:
+                      data=f.read(8_000_001);row['headers']=dict(f.headers)
+                  if len(data)>8_000_000:row['status']='size-ineligible'
+                  else:
+                      Path(h+'.download').write_bytes(data)
+                      row.update(status='downloaded',bytes=len(data),sha256=hashlib.sha256(data).hexdigest())
+              except Exception as e:row.update(status='download-failure',error=str(e))
+              receipt.append(row);print(row['family'],row['status'])
+          Path('receipt.json').write_text(json.dumps(receipt,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v13-affine-resources
+          path: affine-resources
+          retention-days: 7
