@@ -1,0 +1,60 @@
+name: V13 public benchmark collection
+on:
+  push:
+    paths: [.github/workflows/v13-public-benchmarks.yml]
+permissions:
+  contents: read
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download metadata and bounded public instances
+        shell: bash
+        run: |
+          mkdir -p public-benchmarks
+          python3 - <<'PY'
+          import csv,hashlib,io,json,urllib.request,time
+          from pathlib import Path
+          root=Path('public-benchmarks')
+          base='https://raw.githubusercontent.com/satcompetition/2026/main/downloads/'
+          def fetch(url,limit=2000000):
+              req=urllib.request.Request(url,headers={'User-Agent':'SAT-RAG-V13-research'})
+              with urllib.request.urlopen(req,timeout=15) as r:
+                  length=int(r.headers.get('Content-Length','0'))
+                  if length>limit:raise ValueError('size limit '+str(length))
+                  data=r.read(limit+1)
+                  if len(data)>limit:raise ValueError('size limit after read')
+                  return data,dict(r.headers),r.url
+          meta,_,_=fetch(base+'benchmark-compilation-script/selected_benchmarks.csv')
+          uris,_,_=fetch(base+'track_main_2026.uri')
+          (root/'selected_benchmarks.csv').write_bytes(meta)
+          (root/'track_main_2026.uri').write_bytes(uris)
+          allowed={s.rstrip('/').rsplit('/',1)[-1] for s in uris.decode().splitlines()}
+          groups={}
+          for row in csv.DictReader(io.StringIO(meta.decode())):
+              if row['hash'] in allowed:groups.setdefault(row['family'],[]).append(row)
+          receipt={'selection':'alphabetically sorted families, then hash; first downloadable file <=8 MB compressed; at most 3 attempts per family, at most 12 families; never select on solver outcome','metadata_sha256':hashlib.sha256(meta).hexdigest(),'uris_sha256':hashlib.sha256(uris).hexdigest(),'downloaded':[],'attempts':[]}
+          for family in sorted(groups):
+              if len(receipt['downloaded'])>=12:break
+              for row in sorted(groups[family],key=lambda x:x['hash'])[:3]:
+                  url='https://benchmark-database.de/file/'+row['hash']
+                  try:
+                      data,headers,actual=fetch(url,8000000)
+                      if b'<html' in data[:1000].lower():raise ValueError('HTML, not CNF')
+                      p=root/(row['hash']+'.download');p.write_bytes(data)
+                      item={**row,'url':url,'resolved_url':actual,'file':p.name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'headers':headers}
+                      receipt['downloaded'].append(item);receipt['attempts'].append({'family':family,'hash':row['hash'],'ok':True})
+                      print('OK',family,len(data),flush=True);break
+                  except Exception as exc:
+                      receipt['attempts'].append({'family':family,'hash':row['hash'],'ok':False,'error':str(exc)})
+                      print('FAIL',family,str(exc),flush=True)
+              (root/'receipt.json').write_text(json.dumps(receipt,indent=2))
+          (root/'receipt.json').write_text(json.dumps(receipt,indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v13-public-benchmarks
+          path: public-benchmarks
+          retention-days: 7
