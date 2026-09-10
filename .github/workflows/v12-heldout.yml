@@ -1,0 +1,43 @@
+name: SAT RAG V12 held-out conflict memory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/v12-heldout.yml
+
+permissions:
+  contents: read
+
+jobs:
+  heldout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Kissat 4.0.4 with frozen V12 patch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl -fsSL https://github.com/arminbiere/kissat/archive/refs/tags/rel-4.0.4.tar.gz -o kissat.tgz
+          tar xzf kissat.tgz
+          python3 v12_patch.py
+          cd kissat-rel-4.0.4
+          ./configure --statistics
+          make -j2
+          ./build/kissat --version
+      - name: Run frozen V12 held-out benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 v12_bench.py ./kissat-rel-4.0.4/build/kissat --sizes 200,300,400 --seeds 6 --seed-offset 1000003 --timeout 8 --confs .75 --cap 256 --max-size 12 --max-glue 6 --out v12_heldout.csv | tee v12_heldout.log
+      - name: Upload V12 held-out results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sat-rag-v12-heldout
+          path: |
+            v12_heldout.csv
+            v12_heldout.json
+            v12_heldout.log
+          if-no-files-found: warn
