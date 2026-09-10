@@ -3,7 +3,6 @@ import argparse,csv,json,math,os,random,re,subprocess,time
 from pathlib import Path
 import numpy as np
 
-# Same random 3-SAT and vector relaxation family as V11a, but no CNF rewrite.
 def random_3sat(n,m,seed):
     r=random.Random(seed); out=[]
     for _ in range(m):
@@ -49,14 +48,11 @@ def write_cnf(p,cs,n):
         f.write(f'p cnf {n} {len(cs)}\n')
         for c in cs:f.write(' '.join(map(str,c))+' 0\n')
 
-def write_hints(p,phase,conf,mask=None):
+def write_hints(p,phase,conf):
     with open(p,'w') as f:
-        for i,(ph,co) in enumerate(zip(phase,conf),1):
-            if mask is not None and not mask[i-1]: continue
-            f.write(f'{i} {int(ph)} {float(co):.9f}\n')
+        for i,(ph,co) in enumerate(zip(phase,conf),1): f.write(f'{i} {int(ph)} {float(co):.9f}\n')
 
 def stat(text,key):
-    # --statistics format is `c <name>: <integer> ...`
     m=re.search(rf'(?im)^c\s+{re.escape(key)}\s*:\s*([0-9,]+)',text)
     return int(m.group(1).replace(',','')) if m else None
 
@@ -81,10 +77,13 @@ def run(binpath,cnf,timeout,hints=None,threshold=.9):
         env.pop('KISSAT_V11_HINTS',None); env.pop('KISSAT_V11_THRESHOLD',None)
     t=time.perf_counter()
     try:
-        r=subprocess.run([binpath,'--statistics=1',f'--time={timeout}',str(cnf)],capture_output=True,text=True,env=env,timeout=timeout+5)
+        r=subprocess.run([binpath,'--statistics',f'--time={timeout}',str(cnf)],capture_output=True,text=True,env=env,timeout=timeout+5)
         wall=time.perf_counter()-t; text=r.stdout+'\n'+r.stderr
         status='SAT' if r.returncode==10 else 'UNSAT' if r.returncode==20 else 'UNKNOWN'
-        return dict(status=status,wall_s=wall,decisions=stat(text,'decisions'),conflicts=stat(text,'conflicts'),propagations=stat(text,'propagations'),restarts=stat(text,'restarts'),model=model(text,int(next(line.split()[2] for line in open(cnf) if line.startswith('p ')))))
+        if status=='UNKNOWN' and wall<0.05:
+            print('FAST_UNKNOWN',r.returncode,text[-1000:],flush=True)
+        n=int(next(line.split()[2] for line in open(cnf) if line.startswith('p ')))
+        return dict(status=status,wall_s=wall,decisions=stat(text,'decisions'),conflicts=stat(text,'conflicts'),propagations=stat(text,'propagations'),restarts=stat(text,'restarts'),model=model(text,n))
     except subprocess.TimeoutExpired:
         return dict(status='TIMEOUT',wall_s=time.perf_counter()-t,decisions=None,conflicts=None,propagations=None,restarts=None,model=None)
 
@@ -100,8 +99,7 @@ def main():
         hp=root/f'n{n}_{seed}_vector.hints';write_hints(hp,phase,conf)
         rp=root/f'n{n}_{seed}_random.hints';write_hints(rp,rphase,conf)
         variants=[('baseline',None,None,0.0)]
-        for th in ths:
-            variants += [(f'random_t{th:.2f}',rp,th,0.0),(f'vector_t{th:.2f}',hp,th,prep)]
+        for th in ths: variants += [(f'random_t{th:.2f}',rp,th,0.0),(f'vector_t{th:.2f}',hp,th,prep)]
         solved={}
         for name,hints,th,pre in variants:
             res=run(a.kissat,cnf,a.timeout,hints,th if th is not None else .9); mod=res.pop('model'); valid=''
