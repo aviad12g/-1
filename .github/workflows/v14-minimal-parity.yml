@@ -1,0 +1,29 @@
+name: V14 minimal-disagreement-parity corpus
+on:
+  push:
+    paths:
+      - .github/workflows/v14-minimal-parity.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download selected family
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir family
+          for h in 1eea3d913d346b900252d77fc0cb25c8 61fee64c8fc7f05b97a2bc14c0c2bf41; do
+            curl -fsSL "https://benchmark-database.de/file/${h}?context=cnf" -o "family/${h}.xz"
+            xz -dc "family/${h}.xz" > "family/${h}.cnf"
+            grep -m1 '^p cnf' "family/${h}.cnf"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v14-minimal-disagreement-parity
+          path: family
+          retention-days: 7
