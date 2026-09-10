@@ -1,0 +1,61 @@
+name: V15 structure-only near-miss development
+on:
+  push:
+    paths:
+      - v15_nearmiss_candidates.csv
+      - v15_nearmiss_bench.py
+      - .github/workflows/v15-nearmiss-dev.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Kissat and frozen/forced V15
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://codeload.github.com/arminbiere/kissat/tar.gz/8af8e56f174b778aef3aa45af9f739b2a5f492c2 -o kissat.tar.gz
+          tar xzf kissat.tar.gz
+          mv kissat-8af8e56f174b778aef3aa45af9f739b2a5f492c2 kissat-src
+          (cd kissat-src && ./configure && make -j2)
+          g++ -O3 -DNDEBUG -std=c++17 v15_router.cpp -o v15_router
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('v15_router.cpp').read_text()
+          old='internal_frac>=0.65 && output_ratio<=0.25'
+          new='internal_frac>=0.0 && output_ratio<=1.01'
+          assert old in s
+          Path('v15_router_force.cpp').write_text(s.replace(old,new,1))
+          PY
+          g++ -O3 -DNDEBUG -std=c++17 v15_router_force.cpp -o v15_router_force
+      - name: Fetch pinned CryptoMiniSat 5.14.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://github.com/msoos/cryptominisat/releases/download/release/v5.14.7/cryptominisat5-v5.14.7-linux-amd64.tar.gz -o cms.tar.gz
+          echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
+          mkdir cms && tar xzf cms.tar.gz -C cms
+          CMS_BIN=$(find "$PWD/cms" -type f -name cryptominisat5 | head -1)
+          test -n "$CMS_BIN"; chmod +x "$CMS_BIN"; echo "$CMS_BIN" > CMS_PATH.txt
+      - name: Run structure-selected development comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          export KISSAT="$PWD/kissat-src/build/kissat"
+          export CMS="$(cat CMS_PATH.txt)"
+          export V15="$PWD/v15_router"
+          export V15_FORCE="$PWD/v15_router_force"
+          python3 v15_nearmiss_bench.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v15-nearmiss-dev
+          path: |
+            v15_nearmiss
+            v15_nearmiss_candidates.csv
+            v15_router_force.cpp
+          retention-days: 30
