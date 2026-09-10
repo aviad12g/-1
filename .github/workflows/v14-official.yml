@@ -1,0 +1,28 @@
+name: V14 official 2026 score audit
+on:
+  push:
+    paths:
+      - v14_official_scores.py
+      - .github/workflows/v14-official.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit official score data
+        run: python3 v14_official_scores.py | tee v14_official_run.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v14-official-score-audit
+          path: |
+            scores.csv
+            selected_benchmarks.csv
+            benchmarks2026.csv
+            v14_selected_metadata.txt
+            v14_official_score_audit.txt
+            v14_official_run.log
+          if-no-files-found: error
