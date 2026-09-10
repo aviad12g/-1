@@ -1,0 +1,40 @@
+name: V14 selected 2026 Lights Out corpus
+on:
+  push:
+    paths:
+      - .github/workflows/v14-lights-out.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  collect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all selected Lights Out instances
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p lights-out
+          hashes=(
+            65ee6b49612eccb7d213e4d950f23677
+            32e344a5ab3af245f982678d2b751c6d
+            28dcc4119e1bbb5fbd3fdd8f4140f28d
+            0efcbd10294eb001b16b4d126923372f
+            01d6fa8efd18ebfecd06af408958477b
+            667341ee8c1dea3db613db317e2b2c33
+            80b163b706e0a16702173ec27f3d1331
+          )
+          for h in "${hashes[@]}"; do
+            curl -fsSL "https://benchmark-database.de/file/${h}?context=cnf" -o "lights-out/${h}.download"
+            xz -t "lights-out/${h}.download"
+            xz -dc "lights-out/${h}.download" > "lights-out/${h}.cnf"
+            grep -m1 '^p cnf' "lights-out/${h}.cnf"
+            sha256sum "lights-out/${h}.download" "lights-out/${h}.cnf" >> lights-out/SHA256SUMS
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v14-lights-out-2026
+          path: lights-out
+          retention-days: 7
