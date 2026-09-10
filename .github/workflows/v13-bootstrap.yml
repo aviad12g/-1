@@ -1,0 +1,35 @@
+name: V13 reproducible toolchain bootstrap
+on:
+  push:
+    paths: [.github/workflows/v13-bootstrap.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned Kissat and proof checker
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir toolchain
+          cd toolchain
+          curl -fL https://codeload.github.com/arminbiere/kissat/tar.gz/8af8e56f174b778aef3aa45af9f739b2a5f492c2 -o kissat.tar.gz
+          tar xzf kissat.tar.gz
+          mv kissat-8af8e56f174b778aef3aa45af9f739b2a5f492c2 kissat-stock
+          (cd kissat-stock && ./configure --statistics && make -j2)
+          git clone --depth 1 https://github.com/marijnheule/drat-trim.git
+          (cd drat-trim && git rev-parse HEAD > ../drat_commit.txt && make -j2)
+          cp ../v11b_patch.py ../v12_patch.py ../v12_bench.py .
+          sha256sum kissat.tar.gz kissat-stock/build/kissat drat-trim/drat-trim > SHA256SUMS
+          gcc --version > gcc.txt
+          cd ..
+          tar czf v13-toolchain.tar.gz toolchain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v13-toolchain
+          path: v13-toolchain.tar.gz
+          retention-days: 7
