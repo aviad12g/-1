@@ -1,0 +1,35 @@
+{
+  "protocol": "SAT-RAG-V18-2025-FROZEN-v1",
+  "universe": "SAT Competition 2025 Main Track track_main_2025.uri",
+  "selection": {
+    "n": 96,
+    "ranking": "ascending SHA256('SAT-RAG-V18-2025|' + benchmark_hash)",
+    "replacement_on_download_failure": false,
+    "family_names_used": false,
+    "solver_outcomes_used": false
+  },
+  "topology_rule": {
+    "largest_exact_xor_component_variables_min": 1000,
+    "semantic_gate_condensation_depth_min": 4,
+    "source": "frozen V17 rule before 2025 scan"
+  },
+  "portfolio": {
+    "total_algorithm_budget_seconds": 30.0,
+    "kissat_escape_probe_seconds": 0.10,
+    "xorricane_burst_seconds": 3.0,
+    "fallback": "stock Kissat for all remaining algorithm budget",
+    "topology_analysis_is_charged_to_budget": true,
+    "xnf_conversion_is_charged_to_budget": true
+  },
+  "baselines": {
+    "primary": "stock Kissat 4.0.4, same runner, same 30 second algorithm budget",
+    "secondary_on_routed_candidates": "tuned CryptoMiniSat 5.14.7"
+  },
+  "input_limits": {
+    "max_download_bytes": 25000000,
+    "max_decompressed_bytes": 120000000
+  },
+  "primary_endpoints": ["solved_count", "PAR-2", "unique_solves", "routing_rate", "false-positive-route_cost"],
+  "correctness": ["verify every SAT model against original CNF", "reject solver disagreements"],
+  "proof_caveat": "Xorricane UNSAT results remain experimental until an independent accepted proof certificate is produced."
+}
