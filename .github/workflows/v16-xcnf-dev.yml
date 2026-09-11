@@ -1,0 +1,40 @@
+name: V16 native XOR CryptoMiniSat control
+on:
+  push:
+    paths:
+      - v16_xcnf.py
+      - v16_xcnf_bench.py
+      - .github/workflows/v16-xcnf-dev.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned CryptoMiniSat 5.14.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://github.com/msoos/cryptominisat/releases/download/release/v5.14.7/cryptominisat5-v5.14.7-linux-amd64.tar.gz -o cms.tar.gz
+          echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
+          mkdir cms && tar xzf cms.tar.gz -C cms
+          CMS_BIN=$(find "$PWD/cms" -type f -name cryptominisat5 | head -1);test -n "$CMS_BIN";chmod +x "$CMS_BIN";echo "$CMS_BIN" > CMS_PATH.txt
+      - name: Compare original CNF with exact recovered CNF-XOR
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CMS="$(cat CMS_PATH.txt)"
+          python3 v16_xcnf_bench.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v16-xcnf-dev
+          path: |
+            v16_xcnf
+            v16_xcnf.py
+            v16_xcnf_bench.py
+            v15_nearmiss_candidates.csv
+          retention-days: 30
