@@ -1,0 +1,41 @@
+{
+  "protocol": "SAT-RAG-V16-FROZEN-2026-REMAINDER-v1",
+  "selection": {
+    "universe": "SAT Competition 2026 selected_benchmarks.csv",
+    "exclude": "all hashes in v15_seen_hashes.txt plus the first 150 hashes in the deterministic SHA256('SAT-RAG-V15|' + hash) ranking after those exclusions",
+    "evaluation_set": "all remaining selected hashes; download/size failures are recorded and never replaced",
+    "shards": 8
+  },
+  "input_limits": {
+    "max_download_bytes": 35000000,
+    "max_decompressed_bytes": 180000000
+  },
+  "total_wall_budget_seconds": 5.0,
+  "front_gate": {
+    "sample_clauses": 4096,
+    "min_short_clause_fraction": 0.95,
+    "min_repeated_variable_tuple_fraction": 0.25,
+    "max_variables_for_xnf_route": 10000,
+    "max_clauses_for_xnf_route": 50000
+  },
+  "xnf_candidate_rule": {
+    "min_exact_recovered_xors": 500,
+    "min_exact_xor_density_per_variable": 0.47,
+    "max_recovered_xnf_constraint_ratio": 0.66,
+    "family_names_not_used": true,
+    "solver_outcomes_not_used": true
+  },
+  "candidate_schedule": {
+    "kissat_probe_seconds": 0.10,
+    "xorricane_seconds": 2,
+    "xorricane_args": ["-vb", "0", "-t", "2", "-il", "-1"],
+    "fallback": "stock Kissat for all remaining wall-clock budget"
+  },
+  "baselines": {
+    "primary": "stock Kissat 4.0.4 for 5 seconds on same runner",
+    "candidate_control": "tuned CryptoMiniSat 5.14.7 for 5 seconds on structurally routed candidates"
+  },
+  "primary_endpoints": ["solved_count", "PAR-2", "unique_solves", "routing_rate", "false-positive-route cost"],
+  "correctness": ["verify every SAT model against original CNF", "compare completed SAT/UNSAT result to benchmark label when known", "reject solver disagreements"],
+  "proof_caveat": "Xorricane UNSAT results are experimental until an independent accepted proof path is added; they must be reported separately from submission-ready certified solves."
+}
