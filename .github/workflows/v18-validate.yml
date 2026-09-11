@@ -38,10 +38,12 @@ jobs:
       - name: Build pinned Xorcle
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq g++-14 >/dev/null
           git clone https://github.com/glenn-sun/xorcle.git xorcle-src
           cd xorcle-src
           git checkout af93ea646a4237958e9925bc684dcd545e68de30
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          CC=gcc-14 CXX=g++-14 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j2
           test -x build/xorcle
       - name: Run frozen candidate validation
