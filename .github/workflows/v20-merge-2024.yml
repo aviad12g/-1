@@ -1,0 +1,30 @@
+name: V20 merge completed 2024 scan
+on:
+  push:
+    paths:
+      - v20_merge_scan.py
+      - .github/workflows/v20-merge-2024.yml
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  merge:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all frozen scan shards from original run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: v20-scan-*
+          path: v20_parts
+          merge-multiple: false
+          github-token: ${{ github.token }}
+          run-id: 34610304781
+      - name: Merge without solver outcomes
+        run: python3 v20_merge_scan.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v20-merged-2024
+          path: v20_merged
+          retention-days: 30
