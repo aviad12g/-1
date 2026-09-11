@@ -1,0 +1,34 @@
+name: V17 frozen topology router scan
+on:
+  push:
+    paths:
+      - v17_blind_scan.py
+      - v17_topology.py
+      - .github/workflows/v17-blind-scan.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan prespecified untouched hashes with frozen V17 rule
+        shell: bash
+        env:
+          SHARD: ${{ matrix.shard }}
+          NSHARDS: 8
+        run: |
+          set -euo pipefail
+          python3 v17_blind_scan.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v17-blind-${{ matrix.shard }}
+          path: v17_blind
+          retention-days: 30
