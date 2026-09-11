@@ -1,0 +1,51 @@
+name: V21 cross-year pure-affine portfolio validation
+on:
+  push:
+    paths:
+      - v21_affine_2024_candidates.csv
+      - v21_affine_2024_bench.py
+      - .github/workflows/v21-affine-2024.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Kissat 4.0.4 and V15 exact router
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://codeload.github.com/arminbiere/kissat/tar.gz/8af8e56f174b778aef3aa45af9f739b2a5f492c2 -o kissat.tar.gz
+          tar xzf kissat.tar.gz
+          mv kissat-8af8e56f174b778aef3aa45af9f739b2a5f492c2 kissat-src
+          (cd kissat-src && ./configure && make -j2)
+          g++ -O3 -std=c++17 -DNDEBUG v15_router.cpp -o v15_router
+      - name: Fetch pinned CryptoMiniSat 5.14.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://github.com/msoos/cryptominisat/releases/download/release/v5.14.7/cryptominisat5-v5.14.7-linux-amd64.tar.gz -o cms.tar.gz
+          echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
+          mkdir cms;tar xzf cms.tar.gz -C cms
+          CMS=$(find "$PWD/cms" -type f -name cryptominisat5 | head -1);test -n "$CMS";chmod +x "$CMS";echo "$CMS" > CMS_PATH.txt
+      - name: Run frozen six-candidate benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          export KISSAT="$PWD/kissat-src/build/kissat"
+          export CMS="$(cat CMS_PATH.txt)"
+          export ROUTER="$PWD/v15_router"
+          python3 v21_affine_2024_bench.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v21-affine-2024
+          path: |
+            v21_affine_2024
+            v21_affine_2024_candidates.csv
+            v21_affine_2024_bench.py
+            v15_router.cpp
+          retention-days: 30
