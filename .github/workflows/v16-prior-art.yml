@@ -1,0 +1,60 @@
+name: V16 cnf2xnf prior-art control
+on:
+  push:
+    paths: [.github/workflows/v16-prior-art.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Xorricane and cnf2xnf
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libboost-all-dev libgmp-dev libtool autoconf >/dev/null
+          git clone -q https://github.com/j-danner/Xorricane.git xorricane-src
+          (cd xorricane-src && git checkout -q 74ca967b2514da262943614dfe2610fda0c3737d && git submodule update --init --recursive -q && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build --target xorricane -j2 >/dev/null)
+          XOR=$(find "$PWD/xorricane-src/build" -type f -name xorricane -perm -111 | head -1);test -n "$XOR";echo "$XOR" > XORRICANE_PATH.txt
+          git clone -q https://github.com/Vtec234/xnfsat.git xnfsat-src
+          (cd xnfsat-src && git checkout -q 85a0613d2a5c4e64da6ec046b9ea0e1d55d14e4d && cd cnf2xnf && ./configure >/dev/null && make -j2 >/dev/null)
+          test -x xnfsat-src/cnf2xnf/cnf2xnf6
+      - name: Compare extractors
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import bz2,gzip,lzma,subprocess,time,urllib.request,csv,json
+          from pathlib import Path
+          from v16_cnf_to_xnf import convert
+          hashes=['2a38c5d48846ee1c35c4c40938082a16','5ab5ac8d66c7e375037f12a536baf721']
+          xb=Path('XORRICANE_PATH.txt').read_text().strip();prior='./xnfsat-src/cnf2xnf/cnf2xnf6';root=Path('v16_prior_art');root.mkdir(exist_ok=True);rows=[]
+          def norm(d):
+            if d.startswith(b'\xfd7zXZ\x00'):return lzma.decompress(d)
+            if d.startswith(b'\x1f\x8b'):return gzip.decompress(d)
+            if d.startswith(b'BZh'):return bz2.decompress(d)
+            return d
+          def run(path):
+            t=time.perf_counter()
+            try:p=subprocess.run([xb,'-vb','0','-t','10','-il','-1',str(path)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors='replace',timeout=12);w=time.perf_counter()-t;st='SAT' if p.returncode==10 else 'UNSAT' if p.returncode==20 else 'TIMEOUT' if p.returncode==0 else 'ERROR'
+            except subprocess.TimeoutExpired:w=time.perf_counter()-t;st='TIMEOUT'
+            return st,w
+          for h in hashes:
+            with urllib.request.urlopen('https://benchmark-database.de/file/'+h,timeout=40) as f:d=norm(f.read())
+            cnf=root/(h+'.cnf');cnf.write_bytes(d)
+            ours=root/(h+'.ours.xnf');t=time.perf_counter();meta=convert(cnf,ours);ot=time.perf_counter()-t
+            art=root/(h+'.art.xnf');t=time.perf_counter();p=subprocess.run([prior,str(cnf),str(art)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors='replace',timeout=30);at=time.perf_counter()-t
+            for name,path,ct in [('ours',ours,ot),('cnf2xnf6',art,at)]:
+              st,w=run(path);row={'hash':h,'extractor':name,'conversion_s':ct,'xnf_bytes':path.stat().st_size,'status':st,'xorricane_s':w,'total_s':ct+w};rows.append(row);print(json.dumps(row),flush=True)
+          with open(root/'results.csv','w',newline='') as f:w=csv.DictWriter(f,fieldnames=rows[0]);w.writeheader();w.writerows(rows)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v16-prior-art
+          path: v16_prior_art
+          retention-days: 30
