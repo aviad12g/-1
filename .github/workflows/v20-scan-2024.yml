@@ -1,0 +1,33 @@
+name: V20 frozen V19-router scan on SAT Competition 2024
+on:
+  push:
+    paths:
+      - v20_scan_2024.py
+      - .github/workflows/v20-scan-2024.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Frozen structure-only scan
+        env:
+          SHARD: ${{ matrix.shard }}
+          NSHARDS: 16
+        run: |
+          set -euo pipefail
+          python3 v20_scan_2024.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v20-scan-${{ matrix.shard }}
+          path: |
+            v20_scan/scan_${{ matrix.shard }}.csv
+            v20_scan/summary_${{ matrix.shard }}.json
+          retention-days: 30
