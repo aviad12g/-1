@@ -1,0 +1,34 @@
+name: V20 certify frozen V19 UNSAT win
+on:
+  push:
+    paths:
+      - v20_certify_v19.py
+      - .github/workflows/v20-certify-v19.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Xorcle with GCC 14
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq g++-14 >/dev/null
+          git clone https://github.com/glenn-sun/xorcle.git xorcle-src
+          (cd xorcle-src && git checkout af93ea646a4237958e9925bc684dcd545e68de30 && CC=gcc-14 CXX=g++-14 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j2)
+          test -x xorcle-src/build/xorcle
+      - name: Verify transformation and attempt LRUP-parity proof
+        env:
+          XORCLE: ${{ github.workspace }}/xorcle-src/build/xorcle
+          XORCLE_CHECKER: ${{ github.workspace }}/xorcle-src/tools/check_lrup_parity.py
+        run: python3 v20_certify_v19.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v20-v19-certification
+          path: v20_certify
+          retention-days: 30
