@@ -1,0 +1,32 @@
+name: V22 exact cardinality structure development scan
+on:
+  push:
+    paths:
+      - v22_cardinality_scan.py
+      - .github/workflows/v22-cardinality-scan.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan 2024 CNFs for exact ExactlyOne structure
+        env:
+          SHARD: ${{ matrix.shard }}
+          NSHARDS: '8'
+        run: python3 v22_cardinality_scan.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v22-cardinality-${{ matrix.shard }}
+          path: |
+            v22_cardinality_scan/scan_${{ matrix.shard }}.csv
+            v22_cardinality_scan/summary_${{ matrix.shard }}.json
+          retention-days: 30
