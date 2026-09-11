@@ -1,0 +1,40 @@
+name: V16 XOR recovery causal ablation
+on:
+  push:
+    paths:
+      - v16_xor_ablation.py
+      - .github/workflows/v16-xor-ablation.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Xorricane
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libboost-all-dev libgmp-dev libtool autoconf >/dev/null
+          git clone https://github.com/j-danner/Xorricane.git xorricane-src
+          cd xorricane-src
+          git checkout 74ca967b2514da262943614dfe2610fda0c3737d
+          git submodule update --init --recursive
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target xorricane -j2
+          XOR=$(find "$PWD/build" -type f -name xorricane -perm -111 | head -1);test -n "$XOR";echo "$XOR" > ../XORRICANE_PATH.txt
+      - name: Compare plain-XNF and recovered-XOR XNF
+        shell: bash
+        run: |
+          set -euo pipefail
+          export XORRICANE="$(cat XORRICANE_PATH.txt)"
+          python3 v16_xor_ablation.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v16-xor-ablation
+          path: v16_ablation
+          retention-days: 30
