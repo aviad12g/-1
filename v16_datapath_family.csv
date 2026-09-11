@@ -1,0 +1,7 @@
+global_rank,hash,family,known,equations,internal_frac,output_ratio,struct_score
+-1,e685a5d96e1ee9e051f191eca84b0d88,datapath-equivalence-checking,unsat,,,,0
+-1,12535b3264a9c88bac14522171b497ef,datapath-equivalence-checking,unsat,,,,0
+123,2a38c5d48846ee1c35c4c40938082a16,datapath-equivalence-checking,unsat,868,0.179852,0.610925,0.473551
+33,211b0708454f7901054f5f92f525972e,datapath-equivalence-checking,unsat,317,0.046987,0.686336,0.084921
+86,5ab5ac8d66c7e375037f12a536baf721,datapath-equivalence-checking,unsat,868,0.179283,0.611007,0.471953
+131,27495ba0093076d2e39a9b218e521ee2,datapath-equivalence-checking,unsat,304,0.211180,0.602138,0.480623
