@@ -1,0 +1,35 @@
+name: V19 frozen absolute-interface scan
+on:
+  push:
+    paths:
+      - v19_router.py
+      - v19_blind_scan.py
+      - .github/workflows/v19-blind-scan.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan prespecified non-selected 2026 hashes
+        env:
+          SHARD: ${{ matrix.shard }}
+          NSHARDS: 10
+        run: python3 v19_blind_scan.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v19-blind-${{ matrix.shard }}
+          path: |
+            v19_blind/scan_${{ matrix.shard }}.csv
+            v19_blind/meta_${{ matrix.shard }}.json
+            v19_blind/benchmarks2026.csv
+            v19_blind/selected.csv
+          retention-days: 30
