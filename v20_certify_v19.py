@@ -3,7 +3,8 @@ import bz2,collections,gzip,hashlib,json,lzma,os,subprocess,time,urllib.request
 from pathlib import Path
 from v16_cnf_to_xnf import convert
 
-HASH='05bb70b8cfbd1e3f7bacaf56927c9c94'
+# Exact hash from the frozen V19 validation artifact.
+HASH='05bb70b8ddfd1fb36c6085d6427992a1'
 MAXK=6
 
 def norm(data):
@@ -35,30 +36,23 @@ def parse_xor_token(tok):
     neg=tok.startswith('-');body=tok[1:] if neg else tok
     if '+' not in body:return None
     vs=tuple(sorted(int(x) for x in body.split('+')))
-    # XNF token is true by default. Leading '-' means parity=0.
     return vs,(0 if neg else 1)
 
 def independent_transform_check(cnf,xnf):
     n,clauses=parse_cnf(cnf); xor_eqs=[]; ordinary=[]
-    lines=open(xnf).read().splitlines()
-    for line in lines:
+    for line in open(xnf):
         s=line.strip()
         if not s or s.startswith('c') or s.startswith('p '):continue
         toks=s.split(); assert toks[-1]=='0'; toks=toks[:-1]
-        # Converter emits each recovered XOR as a single XOR expression clause.
         if len(toks)==1 and '+' in toks[0]:
             q=parse_xor_token(toks[0]); assert q; xor_eqs.append(q)
         else: ordinary.append(tuple(int(x) for x in toks))
-    original=collections.Counter(clauses); removed=collections.Counter()
-    checks=[]
+    original=collections.Counter(clauses); removed=collections.Counter();checks=[]
     for key,rhs in xor_eqs:
-        k=len(key); assert 2<=k<=MAXK
-        forbidden=[]
+        k=len(key); assert 2<=k<=MAXK; forbidden=[]
         for val in range(1<<k):
             if (val.bit_count()&1)==rhs:continue
-            # Unique clause on key falsified by this assignment.
             c=tuple((-v if ((val>>i)&1) else v) for i,v in enumerate(key))
-            # Canonicalize to compare independent of literal order.
             target=(key,sum((1<<i) for i,x in enumerate(c) if x<0))
             found=None
             for oc in original:
@@ -87,7 +81,7 @@ def main():
     try:
         p=subprocess.run([xorcle,'--compact=false',f'--proof={proof}',str(xnf)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors='replace',timeout=600)
         solve_s=time.perf_counter()-t;status='UNSAT' if p.returncode==20 or 's UNSATISFIABLE' in p.stdout else 'SAT' if p.returncode==10 or 's SATISFIABLE' in p.stdout else 'OTHER'
-    except subprocess.TimeoutExpired as e:
+    except subprocess.TimeoutExpired:
         solve_s=time.perf_counter()-t;status='TIMEOUT';p=None
     check={'hash':HASH,'status':status,'solve_s':solve_s,'proof_exists':proof.exists(),'proof_bytes':proof.stat().st_size if proof.exists() else 0,'verified':False}
     if status=='UNSAT' and proof.exists():
