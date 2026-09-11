@@ -1,0 +1,52 @@
+name: V17 semantic topology analysis
+on:
+  push:
+    paths:
+      - v17_topology.py
+      - v17_mechanism.py
+      - .github/workflows/v17-topology.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run exact semantic topology analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 v17_topology.py
+      - name: Build pinned Xorricane
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libboost-all-dev libgmp-dev libtool autoconf >/dev/null
+          git clone https://github.com/j-danner/Xorricane.git xorricane-src
+          cd xorricane-src
+          git checkout 74ca967b2514da262943614dfe2610fda0c3737d
+          git submodule update --init --recursive
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target xorricane -j2
+          XOR=$(find "$PWD/build" -type f -name xorricane -perm -111 | head -1);test -n "$XOR";echo "$XOR" > ../XORRICANE_PATH.txt
+      - name: Run Xorricane mechanism counters
+        shell: bash
+        run: |
+          set -euo pipefail
+          export XORRICANE="$(cat XORRICANE_PATH.txt)"
+          python3 v17_mechanism.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v17-topology
+          path: |
+            v17_topology
+            v17_mechanism
+            v17_topology.py
+            v17_mechanism.py
+            v16_cnf_to_xnf.py
+            v15_nearmiss_candidates.csv
+          retention-days: 30
