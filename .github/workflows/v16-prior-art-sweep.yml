@@ -1,0 +1,61 @@
+name: V16 cnf2xnf preprocessing sweep
+on:
+  push:
+    paths: [.github/workflows/v16-prior-art-sweep.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libboost-all-dev libgmp-dev libtool autoconf >/dev/null
+          git clone -q https://github.com/j-danner/Xorricane.git xorricane-src
+          (cd xorricane-src && git checkout -q 74ca967b2514da262943614dfe2610fda0c3737d && git submodule update --init --recursive -q && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release >/dev/null && cmake --build build --target xorricane -j2 >/dev/null)
+          find "$PWD/xorricane-src/build" -type f -name xorricane -perm -111 | head -1 > XORRICANE_PATH.txt
+          git clone -q https://github.com/Vtec234/xnfsat.git xnfsat-src
+          (cd xnfsat-src && git checkout -q 85a0613d2a5c4e64da6ec046b9ea0e1d55d14e4d && cd cnf2xnf && ./configure >/dev/null && make -j2 >/dev/null)
+      - name: Sweep exact conversion modes on the two development wins
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import bz2,gzip,lzma,subprocess,time,urllib.request,csv,json,os
+          from pathlib import Path
+          hashes=['2a38c5d48846ee1c35c4c40938082a16','5ab5ac8d66c7e375037f12a536baf721']
+          xb=Path('XORRICANE_PATH.txt').read_text().strip();c2='./xnfsat-src/cnf2xnf/cnf2xnf6';root=Path('v16_prior_sweep');root.mkdir(exist_ok=True);rows=[]
+          modes={
+            'default':[],
+            'no_eliminate':['--no-eliminate'],
+            'no_gates':['--no-gates'],
+            'recover_only':['--no-eliminate','--no-gates'],
+          }
+          def norm(d):
+            if d.startswith(b'\xfd7zXZ\x00'):return lzma.decompress(d)
+            if d.startswith(b'\x1f\x8b'):return gzip.decompress(d)
+            if d.startswith(b'BZh'):return bz2.decompress(d)
+            return d
+          for h in hashes:
+            with urllib.request.urlopen('https://benchmark-database.de/file/'+h,timeout=40) as f:d=norm(f.read())
+            cnf=root/(h+'.cnf');cnf.write_bytes(d)
+            for name,opts in modes.items():
+              out=root/(h+'.'+name+'.xnf');t=time.perf_counter();p=subprocess.run([c2,*opts,str(cnf),str(out)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors='replace',timeout=30);ct=time.perf_counter()-t
+              t=time.perf_counter()
+              try:q=subprocess.run([xb,'-vb','0','-t','10','-il','-1',str(out)],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors='replace',timeout=12);st='SAT' if q.returncode==10 else 'UNSAT' if q.returncode==20 else 'TIMEOUT' if q.returncode==0 else 'ERROR';sw=time.perf_counter()-t
+              except subprocess.TimeoutExpired:st='TIMEOUT';sw=time.perf_counter()-t
+              row={'hash':h,'mode':name,'convert_rc':p.returncode,'convert_s':ct,'xnf_bytes':out.stat().st_size if out.exists() else -1,'status':st,'xorricane_s':sw,'total_s':ct+sw};rows.append(row);print(json.dumps(row),flush=True)
+          with open(root/'results.csv','w',newline='') as f:w=csv.DictWriter(f,fieldnames=rows[0]);w.writeheader();w.writerows(rows)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v16-prior-art-sweep
+          path: v16_prior_sweep
+          retention-days: 30
