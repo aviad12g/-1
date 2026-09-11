@@ -1,0 +1,23 @@
+name: V17 recursion-limit recheck
+on:
+  push:
+    paths:
+      - v17_stack_recheck.py
+      - .github/workflows/v17-stack-recheck.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recheck two stack-limited rows
+        run: python3 v17_stack_recheck.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v17-stack-recheck
+          path: v17_stack_recheck.json
+          retention-days: 30
