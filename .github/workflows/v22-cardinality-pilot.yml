@@ -1,0 +1,55 @@
+name: V22 exact-cardinality compression pilot
+on:
+  push:
+    paths:
+      - v22_cardinality_pilot.py
+      - v22_pilot_candidates.csv
+      - .github/workflows/v22-cardinality-pilot.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pilot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Kissat 4.0.4
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://codeload.github.com/arminbiere/kissat/tar.gz/8af8e56f174b778aef3aa45af9f739b2a5f492c2 -o kissat.tar.gz
+          tar xzf kissat.tar.gz
+          mv kissat-8af8e56f174b778aef3aa45af9f739b2a5f492c2 kissat-src
+          (cd kissat-src && ./configure && make -j2)
+      - name: Build pinned Exact PB solver
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libboost-dev >/dev/null
+          git clone https://github.com/msakai/exact.git exact-src
+          cd exact-src
+          git checkout 4429d2aab27eb185ca9d13b21c9c7569e041b188
+          cd ..
+          cmake -S exact-src -B exact-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build exact-build --target Exact -j2
+          EXACT=$(find "$PWD/exact-build" -type f -name Exact -perm -111 | head -1)
+          test -n "$EXACT"
+          echo "$EXACT" > EXACT_PATH.txt
+      - name: Run frozen 12-candidate pilot
+        shell: bash
+        run: |
+          set -euo pipefail
+          export KISSAT="$PWD/kissat-src/build/kissat"
+          export EXACT="$(cat EXACT_PATH.txt)"
+          python3 v22_cardinality_pilot.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v22-cardinality-pilot
+          path: |
+            v22_pilot
+            v22_cardinality_pilot.py
+            v22_pilot_candidates.csv
+          retention-days: 30
