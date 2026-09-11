@@ -1,0 +1,64 @@
+name: V16 exact XNF recovery development
+on:
+  push:
+    paths:
+      - v16_cnf_to_xnf.py
+      - v16_xnf_bench.py
+      - .github/workflows/v16-xnf-dev.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Kissat 4.0.4
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://codeload.github.com/arminbiere/kissat/tar.gz/8af8e56f174b778aef3aa45af9f739b2a5f492c2 -o kissat.tar.gz
+          tar xzf kissat.tar.gz && mv kissat-8af8e56f174b778aef3aa45af9f739b2a5f492c2 kissat-src
+          (cd kissat-src && ./configure && make -j2)
+      - name: Fetch pinned CryptoMiniSat 5.14.7
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL https://github.com/msoos/cryptominisat/releases/download/release/v5.14.7/cryptominisat5-v5.14.7-linux-amd64.tar.gz -o cms.tar.gz
+          echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
+          mkdir cms && tar xzf cms.tar.gz -C cms
+          CMS_BIN=$(find "$PWD/cms" -type f -name cryptominisat5 | head -1); test -n "$CMS_BIN";chmod +x "$CMS_BIN";echo "$CMS_BIN" > CMS_PATH.txt
+      - name: Build pinned Xorricane
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libboost-all-dev libgmp-dev libtool autoconf >/dev/null
+          git clone https://github.com/j-danner/Xorricane.git xorricane-src
+          cd xorricane-src
+          git checkout 74ca967b2514da262943614dfe2610fda0c3737d
+          git submodule update --init --recursive
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target xorricane -j2
+          XOR=$(find "$PWD/build" -type f -name xorricane -perm -111 | head -1); test -n "$XOR";echo "$XOR" > ../XORRICANE_PATH.txt
+          "$XOR" --version || true
+      - name: Run exact XNF comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          export KISSAT="$PWD/kissat-src/build/kissat"
+          export CMS="$(cat CMS_PATH.txt)"
+          export XORRICANE="$(cat XORRICANE_PATH.txt)"
+          python3 v16_xnf_bench.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v16-xnf-dev
+          path: |
+            v16_xnf
+            v16_cnf_to_xnf.py
+            v16_xnf_bench.py
+            v15_nearmiss_candidates.csv
+            XORRICANE_PATH.txt
+          retention-days: 30
