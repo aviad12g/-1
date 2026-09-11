@@ -1,0 +1,30 @@
+name: V16 exact semantic gate scan
+on:
+  push:
+    paths:
+      - v16_gate_scan.py
+      - v15_nearmiss_candidates.csv
+      - .github/workflows/v16-gate-scan.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan structure-selected hard cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 v16_gate_scan.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v16-gate-scan
+          path: |
+            v16_gate_scan
+            v16_gate_scan.py
+            v15_nearmiss_candidates.csv
+          retention-days: 30
