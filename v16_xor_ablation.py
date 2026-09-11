@@ -31,7 +31,7 @@ def main():
         with urllib.request.urlopen('https://benchmark-database.de/file/'+h,timeout=40) as f:d=f.read()
         cnf.write_bytes(norm(d));plain_convert(cnf,plain);rm=recover_convert(cnf,rec)
         for mode,path,args in [('plain_default',plain,[]),('recovered_default',rec,[]),('plain_lbd',plain,['-il','-1','-delh','lbd']),('recovered_lbd',rec,['-il','-1','-delh','lbd'])]:
-            res=run(xb,path,args);row={'hash':h,'family':r['family'],'known':r['known'],'variant':mode,'xors_recovered':len(rm[1]) if isinstance(rm,tuple) else '',**res};rows.append(row);print(json.dumps(row),flush=True)
+            res=run(xb,path,args);row={'hash':h,'family':r['family'],'known':r['known'],'variant':mode,'xors_recovered':rm.get('xors',''),**res};rows.append(row);print(json.dumps(row),flush=True)
     import csv as C
     fields=sorted({k for r in rows for k in r})
     with open(root/'results.csv','w',newline='') as f:w=C.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(rows)
