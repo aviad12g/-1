@@ -1,0 +1,22 @@
+name: V20 independent CNF-to-XNF equivalence certificate
+on:
+  push:
+    paths:
+      - v20_transform_only.py
+      - .github/workflows/v20-transform-only.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  certify-transform:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 v20_transform_only.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v20-transform-certificate
+          path: v20_transform_only
+          retention-days: 30
