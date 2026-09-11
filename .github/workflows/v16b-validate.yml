@@ -1,0 +1,18 @@
+name: V16b affine substitution validation
+on:
+  push:
+    paths:
+      - v16b_affine_substitute_xnf.py
+      - v16b_validate.py
+      - .github/workflows/v16b-validate.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exhaustive small-formula validation
+        run: python3 v16b_validate.py
