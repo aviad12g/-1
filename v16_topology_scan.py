@@ -129,7 +129,6 @@ def analyze(n,clauses):
     for v in boundary:comp_boundary[vcomp[v]].add(v)
     internal_total=sum(len(vs-comp_boundary[i]) for i,vs in enumerate(compvars[r] for r in roots))
     comp_sizes=[len(compvars[r]) for r in roots];bwidth=[len(comp_boundary[i]) for i in range(len(roots))]
-    # Skeleton nodes = XOR components plus one singleton node per non-affine variable touched by a gate.
     nextid=len(roots);singleton={}
     def node(v):
         nonlocal nextid
@@ -146,15 +145,15 @@ def analyze(n,clauses):
     adj=[set() for _ in range(nextid)]
     for a,b in edges:adj[a].add(b)
     scc=tarjan(adj);sid={v:i for i,c in enumerate(scc) for v in c};cyc=sum(len(c) for c in scc if len(c)>1)
-    selfcyc=sum(1 for a,b in edges if a==b)
-    cadj=[set() for _ in scc];ind=[0]*len(scc)
+    cadj=[set() for _ in scc];ind=[0]*len(scc);outdeg=[0]*len(scc)
     for a,b in edges:
         x,y=sid[a],sid[b]
-        if x!=y and y not in cadj[x]:cadj[x].add(y);ind[y]+=1
-    q=deque(i for i,dg in enumerate(ind) if dg==0);dist=[0]*len(scc);seen=0
+        if x!=y and y not in cadj[x]:cadj[x].add(y);ind[y]+=1;outdeg[x]+=1
+    source_sccs=sum(1 for x in ind if x==0);sink_sccs=sum(1 for x in outdeg if x==0)
+    work=ind[:];q=deque(i for i,dg in enumerate(work) if dg==0);dist=[0]*len(scc)
     while q:
-        u=q.popleft();seen+=1
-        for v in cadj[u]:dist[v]=max(dist[v],dist[u]+1);ind[v]-=1; q.append(v) if ind[v]==0 else None
+        u=q.popleft()
+        for v in cadj[u]:dist[v]=max(dist[v],dist[u]+1);work[v]-=1; q.append(v) if work[v]==0 else None
     semantic=xc|gc
     return {
       'n':n,'m':len(clauses),'xor_equations':len(xors),'and_gates':len(gates),
@@ -167,7 +166,7 @@ def analyze(n,clauses):
       'affine_internal_vars':internal_total,'affine_internal_fraction':internal_total/max(1,n),
       'skeleton_nodes':nextid,'skeleton_edges':len(edges),'cross_gates':cross_gates,'internal_gates':internal_gates,
       'scc_count':len(scc),'largest_scc':max((len(c) for c in scc),default=0),'cyclic_node_fraction':cyc/max(1,nextid),
-      'condensation_depth':max(dist,default=0),'source_sccs':sum(1 for x in ind if x==0),
+      'condensation_depth':max(dist,default=0),'source_sccs':source_sccs,'sink_sccs':sink_sccs,
     }
 
 def main():
