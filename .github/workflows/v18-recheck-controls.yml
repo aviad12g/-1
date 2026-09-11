@@ -1,0 +1,22 @@
+name: V18 development topology control recheck
+on:
+  push:
+    paths:
+      - v18_recheck_controls.py
+      - .github/workflows/v18-recheck-controls.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recheck remaining positive controls
+        run: python3 v18_recheck_controls.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v18-control-recheck
+          path: v18_recheck
+          retention-days: 30
