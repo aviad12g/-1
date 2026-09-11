@@ -1,0 +1,66 @@
+name: V18 frozen routed validation
+on:
+  push:
+    paths:
+      - v18_frozen_candidates.csv
+      - v18_validate.py
+      - .github/workflows/v18-validate.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned Kissat 4.0.4
+        run: |
+          set -euo pipefail
+          curl -fL https://codeload.github.com/arminbiere/kissat/tar.gz/8af8e56f174b778aef3aa45af9f739b2a5f492c2 -o kissat.tar.gz
+          tar xzf kissat.tar.gz && mv kissat-8af8e56f174b778aef3aa45af9f739b2a5f492c2 kissat-src
+          (cd kissat-src && ./configure && make -j2)
+      - name: Fetch pinned CryptoMiniSat 5.14.7
+        run: |
+          set -euo pipefail
+          curl -fL https://github.com/msoos/cryptominisat/releases/download/release/v5.14.7/cryptominisat5-v5.14.7-linux-amd64.tar.gz -o cms.tar.gz
+          echo '536d4cb03bbd2b4cbcca6230ed30e2aa844f170b5bbcfb0a0d7adb4852cf3ab7  cms.tar.gz' | sha256sum -c -
+          mkdir cms && tar xzf cms.tar.gz -C cms
+          CMS_BIN=$(find "$PWD/cms" -type f -name cryptominisat5 | head -1);chmod +x "$CMS_BIN";echo "$CMS_BIN" > CMS_PATH.txt
+      - name: Build pinned Xorricane
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libboost-all-dev libgmp-dev libtool autoconf >/dev/null
+          git clone https://github.com/j-danner/Xorricane.git xorricane-src
+          (cd xorricane-src && git checkout 74ca967b2514da262943614dfe2610fda0c3737d && git submodule update --init --recursive && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target xorricane -j2)
+          XOR=$(find "$PWD/xorricane-src/build" -type f -name xorricane -perm -111 | head -1);echo "$XOR" > XORRICANE_PATH.txt
+      - name: Build pinned Xorcle
+        run: |
+          set -euo pipefail
+          git clone https://github.com/glenn-sun/xorcle.git xorcle-src
+          cd xorcle-src
+          git checkout af93ea646a4237958e9925bc684dcd545e68de30
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j2
+          test -x build/xorcle
+      - name: Run frozen candidate validation
+        env:
+          KISSAT: ${{ github.workspace }}/kissat-src/build/kissat
+          CMS: ${{ github.workspace }}/cms/bin/cryptominisat5
+          XORRICANE: ${{ github.workspace }}/xorricane-src/build/xorricane
+          XORCLE: ${{ github.workspace }}/xorcle-src/build/xorcle
+          XORCLE_CHECKER: ${{ github.workspace }}/xorcle-src/tools/check_lrup_parity.py
+        run: |
+          if [ ! -x "$CMS" ]; then export CMS=$(cat CMS_PATH.txt); fi
+          python3 v18_validate.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v18-validation
+          path: |
+            v18_validate
+            v18_frozen_candidates.csv
+            v18_router.py
+            v18_validate.py
+          retention-days: 30
