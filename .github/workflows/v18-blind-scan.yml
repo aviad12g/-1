@@ -1,0 +1,33 @@
+name: V18 frozen topology-quality scan
+on:
+  push:
+    paths:
+      - v18_router.py
+      - v18_blind_scan.py
+      - .github/workflows/v18-blind-scan.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scan:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan untouched hashes with frozen V18 rule
+        env:
+          SHARD: ${{ matrix.shard }}
+          NSHARDS: 10
+        run: python3 v18_blind_scan.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v18-blind-${{ matrix.shard }}
+          path: |
+            v18_blind/scan_${{ matrix.shard }}.csv
+            v18_blind/selected.csv
+          retention-days: 30
